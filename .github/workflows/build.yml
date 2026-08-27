@@ -1,24 +1,39 @@
 name: Build EXE
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Install AutoHotkey
-        run: choco install autohotkey --yes
-
-      - name: Find Ahk2Exe
         run: |
-          Get-ChildItem "C:\Program Files" -Recurse -Filter Ahk2Exe.exe
+          choco install autohotkey --yes
 
-      - name: Compile to EXE
+      - name: Locate AutoHotkey Compiler
+        shell: powershell
         run: |
-          & "C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" /in keyboard-fixer.ahk /out keyboard-fixer.exe
+          $ahk = Get-ChildItem "C:\Program Files\AutoHotkey*" -Recurse -Filter Ahk2Exe.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+
+          if ($null -eq $ahk) {
+              Write-Error "Ahk2Exe.exe not found"
+              exit 1
+          }
+
+          Write-Host "Compiler found:"
+          Write-Host $ahk.FullName
+
+          echo "AHK_COMPILER=$($ahk.FullName)" >> $env:GITHUB_ENV
+
+      - name: Compile AHK to EXE
+        shell: powershell
+        run: |
+          & "$env:AHK_COMPILER" /in keyboard-fixer.ahk /out keyboard-fixer.exe
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
