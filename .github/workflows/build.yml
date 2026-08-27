@@ -8,18 +8,20 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup AutoHotkey v2
-        uses: mdcampbell/ahk2exe@v1
-        with:
-          in: keyboard-fixer.ahk
-          out: keyboard-fixer.exe
-          base: v2
+      - name: Install AutoHotkey v2
+        run: |
+          curl -L https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.19/AutoHotkey_2.0.19_setup.exe -o ahk.exe
+          .\ahk.exe /S
+
+      - name: Compile
+        shell: powershell
+        run: |
+          & "C:\Program Files\AutoHotkey\v2\Compiler\Ahk2Exe.exe" /in keyboard-fixer.ahk /out keyboard-fixer.exe
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: keyboard-fixer-exe
+          name: keyboard-fixer
           path: keyboard-fixer.exe
