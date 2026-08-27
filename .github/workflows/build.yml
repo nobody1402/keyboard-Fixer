@@ -11,38 +11,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install AutoHotkey v2
-        shell: powershell
-        run: |
-          Invoke-WebRequest `
-            -Uri "https://github.com/AutoHotkey/AutoHotkey/releases/latest/download/AutoHotkey_2.0_setup.exe" `
-            -OutFile "AutoHotkey_Setup.exe"
-
-          Start-Process `
-            -FilePath ".\AutoHotkey_Setup.exe" `
-            -ArgumentList "/S" `
-            -Wait
-
-      - name: Find Ahk2Exe
-        shell: powershell
-        run: |
-          $compiler = Get-ChildItem "C:\Program Files" -Recurse -Filter "Ahk2Exe.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-
-          if ($null -eq $compiler) {
-              Write-Error "Compiler not found"
-              exit 1
-          }
-
-          echo "AHK_COMPILER=$($compiler.FullName)" >> $env:GITHUB_ENV
-          Write-Host "Found: $($compiler.FullName)"
-
-      - name: Compile EXE
-        shell: powershell
-        run: |
-          & "$env:AHK_COMPILER" /in keyboard-fixer.ahk /out keyboard-fixer.exe
+      - name: Setup AutoHotkey v2
+        uses: mdcampbell/ahk2exe@v1
+        with:
+          in: keyboard-fixer.ahk
+          out: keyboard-fixer.exe
+          base: v2
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: keyboard-fixer
+          name: keyboard-fixer-exe
           path: keyboard-fixer.exe
