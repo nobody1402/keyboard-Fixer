@@ -1,47 +1,23 @@
 name: Build EXE
-
-on:
-  workflow_dispatch:
-
+on: workflow_dispatch
 jobs:
   build:
     runs-on: windows-latest
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install AutoHotkey v2 and Ahk2Exe
-        uses: holy-tao/install-autohotkey@v2
-        with:
-          version: '2.0.19'
-          compiler: 'latest'
-
-      - name: Compile keyboard-fixer.ahk
-        shell: powershell
+      - uses: actions/checkout@v4
+      - name: Install AutoHotkey
+        run: choco install autohotkey -y --no-progress
+      - name: Compile to EXE
         run: |
-          & "${{ github.workspace }}\autohotkey\Compiler\Ahk2Exe.exe" `
-            /in "${{ github.workspace }}\keyboard-fixer.ahk" `
-            /out "${{ github.workspace }}\keyboard-fixer.exe"
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "AutoHotkey compilation failed."
-            exit $LASTEXITCODE
-          }
-
+          & "C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" /in keyboard-fixer.ahk /out keyboard-fixer.exe
       - name: Verify EXE
-        shell: powershell
         run: |
           if (-not (Test-Path "keyboard-fixer.exe")) {
             Write-Error "keyboard-fixer.exe was not created."
             exit 1
           }
-
-          Write-Host "EXE created successfully:"
-          Get-Item "keyboard-fixer.exe"
-
-      - name: Upload EXE
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: keyboard-fixer
           path: keyboard-fixer.exe
