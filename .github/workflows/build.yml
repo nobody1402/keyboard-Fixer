@@ -7,10 +7,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install AutoHotkey (interpreter)
+      - name: Install AutoHotkey v2 (interpreter)
         run: choco install autohotkey -y --no-progress
 
-      - name: Download and install Ahk2Exe compiler
+      - name: Locate v2 base exe and download Ahk2Exe compiler
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -20,8 +20,25 @@ jobs:
             $ahkRoot = "C:\Program Files (x86)\AutoHotkey"
           }
           Write-Host "AutoHotkey root: $ahkRoot"
-          Write-Host "--- Contents of AutoHotkey root ---"
+          Write-Host "--- Full contents ---"
           Get-ChildItem -Path $ahkRoot -Recurse | Select-Object FullName
+
+          # فایل base باید حتماً از پوشه v2 باشه (نه v1.1 که در ریشه هست)
+          $v2Dir = Join-Path $ahkRoot "v2"
+          if (-not (Test-Path $v2Dir)) {
+            Write-Error "پوشه v2 پیدا نشد؛ یعنی نسخه‌ی 2 نصب نشده. محتویات بالا رو ببین."
+            exit 1
+          }
+          $baseExe = Get-ChildItem -Path $v2Dir -Filter "AutoHotkey64.exe" -Recurse | Select-Object -First 1
+          if (-not $baseExe) {
+            $baseExe = Get-ChildItem -Path $v2Dir -Filter "AutoHotkey*.exe" -Recurse | Select-Object -First 1
+          }
+          if (-not $baseExe) {
+            Write-Error "هیچ فایل base ای زیر پوشه v2 پیدا نشد."
+            exit 1
+          }
+          Write-Host "Base exe (v2) at: $($baseExe.FullName)"
+          echo "AHK_BASE_PATH=$($baseExe.FullName)" >> $env:GITHUB_ENV
 
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest"
           $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
@@ -40,23 +57,17 @@ jobs:
           Write-Host "Ahk2Exe.exe at: $($ahk2exe.FullName)"
           echo "AHK2EXE_PATH=$($ahk2exe.FullName)" >> $env:GITHUB_ENV
 
-          # پیدا کردن فایل base مناسب برای v2 (خود اینترپرتر که به exe نهایی جاسازی میشه)
-          $baseExe = Get-ChildItem -Path $ahkRoot -Filter "AutoHotkey*.exe" -Recurse |
-                     Where-Object { $_.FullName -match "\\v2\\" -or $_.Name -match "64" } |
-                     Select-Object -First 1
-          if (-not $baseExe) {
-            $baseExe = Get-ChildItem -Path $ahkRoot -Filter "AutoHotkey*.exe" -Recurse | Select-Object -First 1
-          }
-          Write-Host "Base exe at: $($baseExe.FullName)"
-          echo "AHK_BASE_PATH=$($baseExe.FullName)" >> $env:GITHUB_ENV
-
       - name: Compile to EXE
         shell: powershell
         run: |
-          Write-Host "Using compiler: $env:AHK2EXE_PATH"
-          Write-Host "Using base: $env:AHK_BASE_PATH"
-          & "$env:AHK2EXE_PATH" /in "keyboard-fixer.ahk" /out "keyboard-fixer.exe" /base "$env:AHK_BASE_PATH"
-          Write-Host "Ahk2Exe exit code: $LASTEXITCODE"
+          Write-Host "Compiler: $env:AHK2EXE_PATH"
+          Write-Host "Base:     $env:AHK_BASE_PATH"
+
+          $proc = Start-Process -FilePath $env:AHK2EXE_PATH `
+            -ArgumentList @('/in', 'keyboard-fixer.ahk', '/out', 'keyboard-fixer.exe', '/base', $env:AHK_BASE_PATH) `
+            -NoNewWindow -Wait -PassThru
+
+          Write-Host "Ahk2Exe real exit code: $($proc.ExitCode)"
           Write-Host "--- Current directory contents ---"
           Get-ChildItem
 
