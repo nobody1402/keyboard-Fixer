@@ -10,35 +10,22 @@ jobs:
       - name: Install AutoHotkey v2 (interpreter)
         run: choco install autohotkey -y --no-progress
 
-      - name: Locate v2 base exe and download Ahk2Exe compiler
+      - name: Download and install Ahk2Exe compiler
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
 
           $ahkRoot = "C:\Program Files\AutoHotkey"
-          if (-not (Test-Path $ahkRoot)) {
-            $ahkRoot = "C:\Program Files (x86)\AutoHotkey"
-          }
-          Write-Host "AutoHotkey root: $ahkRoot"
-          Write-Host "--- Full contents ---"
-          Get-ChildItem -Path $ahkRoot -Recurse | Select-Object FullName
+          $baseExe = Join-Path $ahkRoot "v2\AutoHotkey64.exe"
 
-          # فایل base باید حتماً از پوشه v2 باشه (نه v1.1 که در ریشه هست)
-          $v2Dir = Join-Path $ahkRoot "v2"
-          if (-not (Test-Path $v2Dir)) {
-            Write-Error "پوشه v2 پیدا نشد؛ یعنی نسخه‌ی 2 نصب نشده. محتویات بالا رو ببین."
+          if (-not (Test-Path $baseExe)) {
+            Write-Error "فایل base انتظار‌رفته پیدا نشد: $baseExe"
+            Write-Host "--- محتویات نصب‌شده ---"
+            Get-ChildItem -Path $ahkRoot -Recurse | Select-Object FullName | Format-Table -AutoSize | Out-Host
             exit 1
           }
-          $baseExe = Get-ChildItem -Path $v2Dir -Filter "AutoHotkey64.exe" -Recurse | Select-Object -First 1
-          if (-not $baseExe) {
-            $baseExe = Get-ChildItem -Path $v2Dir -Filter "AutoHotkey*.exe" -Recurse | Select-Object -First 1
-          }
-          if (-not $baseExe) {
-            Write-Error "هیچ فایل base ای زیر پوشه v2 پیدا نشد."
-            exit 1
-          }
-          Write-Host "Base exe (v2) at: $($baseExe.FullName)"
-          echo "AHK_BASE_PATH=$($baseExe.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Base exe (v2) at: $baseExe"
+          echo "AHK_BASE_PATH=$baseExe" >> $env:GITHUB_ENV
 
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest"
           $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
