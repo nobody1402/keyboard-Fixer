@@ -6,17 +6,36 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - name: Install AutoHotkey
         run: choco install autohotkey -y --no-progress
-      - name: Compile to EXE
+
+      - name: Locate Ahk2Exe.exe
+        id: locate
+        shell: powershell
         run: |
-          & "C:\Program Files\AutoHotkey\Compiler\Ahk2Exe.exe" /in keyboard-fixer.ahk /out keyboard-fixer.exe
+          $found = Get-ChildItem -Path "C:\Program Files\AutoHotkey","C:\Program Files (x86)\AutoHotkey" -Filter "Ahk2Exe.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $found) {
+            Write-Error "Ahk2Exe.exe not found anywhere under AutoHotkey install folder."
+            Get-ChildItem -Path "C:\Program Files\AutoHotkey" -Recurse -ErrorAction SilentlyContinue
+            exit 1
+          }
+          Write-Host "Found: $($found.FullName)"
+          echo "AHK2EXE_PATH=$($found.FullName)" >> $env:GITHUB_ENV
+
+      - name: Compile to EXE
+        shell: powershell
+        run: |
+          & "$env:AHK2EXE_PATH" /in keyboard-fixer.ahk /out keyboard-fixer.exe
+
       - name: Verify EXE
+        shell: powershell
         run: |
           if (-not (Test-Path "keyboard-fixer.exe")) {
             Write-Error "keyboard-fixer.exe was not created."
             exit 1
           }
+
       - uses: actions/upload-artifact@v4
         with:
           name: keyboard-fixer
