@@ -7,21 +7,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install AutoHotkey
+      - name: Install AutoHotkey (interpreter)
         run: choco install autohotkey -y --no-progress
 
-      - name: Locate Ahk2Exe.exe
-        id: locate
+      - name: Download and install Ahk2Exe compiler
         shell: powershell
         run: |
-          $found = Get-ChildItem -Path "C:\Program Files\AutoHotkey","C:\Program Files (x86)\AutoHotkey" -Filter "Ahk2Exe.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $found) {
-            Write-Error "Ahk2Exe.exe not found anywhere under AutoHotkey install folder."
-            Get-ChildItem -Path "C:\Program Files\AutoHotkey" -Recurse -ErrorAction SilentlyContinue
+          $ErrorActionPreference = "Stop"
+
+          # پیدا کردن پوشه‌ی اصلی نصب AutoHotkey
+          $ahkRoot = "C:\Program Files\AutoHotkey"
+          if (-not (Test-Path $ahkRoot)) {
+            $ahkRoot = "C:\Program Files (x86)\AutoHotkey"
+          }
+          Write-Host "AutoHotkey root: $ahkRoot"
+
+          # گرفتن آخرین نسخه‌ی Ahk2Exe مستقیم از گیت‌هاب رسمی
+          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest"
+          $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+          Write-Host "Downloading: $($asset.browser_download_url)"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:RUNNER_TEMP\Ahk2Exe.zip"
+
+          $compilerDir = Join-Path $ahkRoot "Compiler"
+          New-Item -ItemType Directory -Force -Path $compilerDir | Out-Null
+          Expand-Archive -Path "$env:RUNNER_TEMP\Ahk2Exe.zip" -DestinationPath $compilerDir -Force
+
+          $ahk2exe = Get-ChildItem -Path $compilerDir -Filter "Ahk2Exe.exe" -Recurse | Select-Object -First 1
+          if (-not $ahk2exe) {
+            Write-Error "Ahk2Exe.exe extraction failed."
             exit 1
           }
-          Write-Host "Found: $($found.FullName)"
-          echo "AHK2EXE_PATH=$($found.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Ahk2Exe.exe at: $($ahk2exe.FullName)"
+          echo "AHK2EXE_PATH=$($ahk2exe.FullName)" >> $env:GITHUB_ENV
 
       - name: Compile to EXE
         shell: powershell
@@ -35,6 +52,7 @@ jobs:
             Write-Error "keyboard-fixer.exe was not created."
             exit 1
           }
+          Get-Item "keyboard-fixer.exe"
 
       - uses: actions/upload-artifact@v4
         with:
