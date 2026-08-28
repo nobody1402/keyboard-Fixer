@@ -1,73 +1,106 @@
 name: Build EXE
-on: workflow_dispatch
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 10
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Install AutoHotkey v2 (interpreter)
-        run: choco install autohotkey -y --no-progress
+      - name: Install AutoHotkey v2
+        shell: powershell
+        run: choco install autohotkey --version=2.0.19 -y --no-progress
 
-      - name: Download and install Ahk2Exe compiler
+      - name: Download Ahk2Exe
         shell: powershell
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
 
-          $ahkRoot = "C:\Program Files\AutoHotkey"
-          $baseExe = Join-Path $ahkRoot "v2\AutoHotkey64.exe"
+          $ahkRoot = 'C:\Program Files\AutoHotkey'
+          $baseExe = Get-ChildItem -Path $ahkRoot -Recurse -File -Filter 'AutoHotkey64.exe' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\v2\\' } |
+            Select-Object -First 1
 
-          if (-not (Test-Path $baseExe)) {
-            Write-Error "فایل base انتظار‌رفته پیدا نشد: $baseExe"
-            Write-Host "--- محتویات نصب‌شده ---"
-            Get-ChildItem -Path $ahkRoot -Recurse | Select-Object FullName | Format-Table -AutoSize | Out-Host
-            exit 1
+          if (-not $baseExe) {
+            Write-Error "AutoHotkey v2 interpreter was not found under $ahkRoot"
           }
-          Write-Host "Base exe (v2) at: $baseExe"
-          echo "AHK_BASE_PATH=$baseExe" >> $env:GITHUB_ENV
 
-          $release = Invoke-RestMethod -Uri "https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest"
-          $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+          Write-Host "Base exe: $($baseExe.FullName)"
+          Add-Content -Path $env:GITHUB_ENV -Value "AHK_BASE_PATH=$($baseExe.FullName)"
+
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest'
+          $asset = $release.assets |
+            Where-Object { $_.name -match '(?i)\.zip$' } |
+            Select-Object -First 1
+
+          if (-not $asset) {
+            Write-Error 'No Ahk2Exe ZIP asset was found in the latest release.'
+          }
+
+          $zipPath = Join-Path $env:RUNNER_TEMP 'Ahk2Exe.zip'
+          $compilerDir = Join-Path $env:RUNNER_TEMP 'Ahk2Exe'
           Write-Host "Downloading: $($asset.browser_download_url)"
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile "$env:RUNNER_TEMP\Ahk2Exe.zip"
-
-          $compilerDir = Join-Path $ahkRoot "Compiler"
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
           New-Item -ItemType Directory -Force -Path $compilerDir | Out-Null
-          Expand-Archive -Path "$env:RUNNER_TEMP\Ahk2Exe.zip" -DestinationPath $compilerDir -Force
+          Expand-Archive -Path $zipPath -DestinationPath $compilerDir -Force
 
-          $ahk2exe = Get-ChildItem -Path $compilerDir -Filter "Ahk2Exe.exe" -Recurse | Select-Object -First 1
-          if (-not $ahk2exe) {
-            Write-Error "Ahk2Exe.exe extraction failed."
-            exit 1
+          $compiler = Get-ChildItem -Path $compilerDir -Recurse -File -Filter 'Ahk2Exe.exe' |
+            Select-Object -First 1
+          if (-not $compiler) {
+            Write-Error 'Ahk2Exe.exe was not found after extracting the release archive.'
           }
-          Write-Host "Ahk2Exe.exe at: $($ahk2exe.FullName)"
-          echo "AHK2EXE_PATH=$($ahk2exe.FullName)" >> $env:GITHUB_ENV
+
+          Write-Host "Compiler: $($compiler.FullName)"
+          Add-Content -Path $env:GITHUB_ENV -Value "AHK2EXE_PATH=$($compiler.FullName)"
 
       - name: Compile to EXE
         shell: powershell
         run: |
+          $ErrorActionPreference = 'Stop'
+          $arguments = @(
+            '/in', 'keyboard-fixer.ahk',
+            '/out', 'keyboard-fixer.exe',
+            '/base', $env:AHK_BASE_PATH,
+            '/silent'
+          )
+
           Write-Host "Compiler: $env:AHK2EXE_PATH"
-          Write-Host "Base:     $env:AHK_BASE_PATH"
-
-          $proc = Start-Process -FilePath $env:AHK2EXE_PATH `
-            -ArgumentList @('/in', 'keyboard-fixer.ahk', '/out', 'keyboard-fixer.exe', '/base', $env:AHK_BASE_PATH) `
-            -NoNewWindow -Wait -PassThru
-
-          Write-Host "Ahk2Exe real exit code: $($proc.ExitCode)"
-          Write-Host "--- Current directory contents ---"
-          Get-ChildItem
+          Write-Host "Base: $env:AHK_BASE_PATH"
+          & $env:AHK2EXE_PATH @arguments
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Ahk2Exe failed with exit code $LASTEXITCODE"
+          }
 
       - name: Verify EXE
         shell: powershell
         run: |
-          if (-not (Test-Path "keyboard-fixer.exe")) {
-            Write-Error "keyboard-fixer.exe was not created."
-            exit 1
+          if (-not (Test-Path -LiteralPath 'keyboard-fixer.exe')) {
+            Write-Error 'keyboard-fixer.exe was not created.'
           }
-          Get-Item "keyboard-fixer.exe"
+          Get-Item -LiteralPath 'keyboard-fixer.exe' | Format-List FullName,Length,LastWriteTime
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
         with:
           name: keyboard-fixer
           path: keyboard-fixer.exe
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload source files
+        uses: actions/upload-artifact@v4
+        with:
+          name: keyboard-fixer-source
+          path: |
+            keyboard-fixer.ahk
+            dictionary.txt
+          retention-days: 14
+          if-no-files-found: error
