@@ -15,14 +15,14 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
 
-          # پیدا کردن پوشه‌ی اصلی نصب AutoHotkey
           $ahkRoot = "C:\Program Files\AutoHotkey"
           if (-not (Test-Path $ahkRoot)) {
             $ahkRoot = "C:\Program Files (x86)\AutoHotkey"
           }
           Write-Host "AutoHotkey root: $ahkRoot"
+          Write-Host "--- Contents of AutoHotkey root ---"
+          Get-ChildItem -Path $ahkRoot -Recurse | Select-Object FullName
 
-          # گرفتن آخرین نسخه‌ی Ahk2Exe مستقیم از گیت‌هاب رسمی
           $release = Invoke-RestMethod -Uri "https://api.github.com/repos/AutoHotkey/Ahk2Exe/releases/latest"
           $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
           Write-Host "Downloading: $($asset.browser_download_url)"
@@ -40,10 +40,25 @@ jobs:
           Write-Host "Ahk2Exe.exe at: $($ahk2exe.FullName)"
           echo "AHK2EXE_PATH=$($ahk2exe.FullName)" >> $env:GITHUB_ENV
 
+          # پیدا کردن فایل base مناسب برای v2 (خود اینترپرتر که به exe نهایی جاسازی میشه)
+          $baseExe = Get-ChildItem -Path $ahkRoot -Filter "AutoHotkey*.exe" -Recurse |
+                     Where-Object { $_.FullName -match "\\v2\\" -or $_.Name -match "64" } |
+                     Select-Object -First 1
+          if (-not $baseExe) {
+            $baseExe = Get-ChildItem -Path $ahkRoot -Filter "AutoHotkey*.exe" -Recurse | Select-Object -First 1
+          }
+          Write-Host "Base exe at: $($baseExe.FullName)"
+          echo "AHK_BASE_PATH=$($baseExe.FullName)" >> $env:GITHUB_ENV
+
       - name: Compile to EXE
         shell: powershell
         run: |
-          & "$env:AHK2EXE_PATH" /in keyboard-fixer.ahk /out keyboard-fixer.exe
+          Write-Host "Using compiler: $env:AHK2EXE_PATH"
+          Write-Host "Using base: $env:AHK_BASE_PATH"
+          & "$env:AHK2EXE_PATH" /in "keyboard-fixer.ahk" /out "keyboard-fixer.exe" /base "$env:AHK_BASE_PATH"
+          Write-Host "Ahk2Exe exit code: $LASTEXITCODE"
+          Write-Host "--- Current directory contents ---"
+          Get-ChildItem
 
       - name: Verify EXE
         shell: powershell
