@@ -11,70 +11,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download AutoHotkey v2
-        shell: powershell
-        run: |
-          Invoke-WebRequest `
-            -Uri "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.19/AutoHotkey_2.0.19_setup.exe" `
-            -OutFile "$env:TEMP\AutoHotkey_Setup.exe"
-
-      - name: Install AutoHotkey v2
-        shell: powershell
-        run: |
-          Start-Process `
-            -FilePath "$env:TEMP\AutoHotkey_Setup.exe" `
-            -ArgumentList "/S" `
-            -Wait
-
-      - name: Find AutoHotkey Compiler
-        shell: powershell
-        run: |
-          $paths = @(
-            "C:\Program Files\AutoHotkey",
-            "C:\Program Files (x86)\AutoHotkey",
-            "$env:LOCALAPPDATA\Programs\AutoHotkey"
-          )
-
-          $compiler = $null
-
-          foreach ($path in $paths) {
-            if (Test-Path $path) {
-              $compiler = Get-ChildItem `
-                -Path $path `
-                -Recurse `
-                -Filter "Ahk2Exe.exe" `
-                -File `
-                -ErrorAction SilentlyContinue |
-                Select-Object -First 1
-
-              if ($compiler) {
-                break
-              }
-            }
-          }
-
-          if (-not $compiler) {
-            Write-Host "AutoHotkey installation contents:"
-            Get-ChildItem "C:\Program Files\AutoHotkey" -Recurse -ErrorAction SilentlyContinue
-
-            Write-Error "Ahk2Exe.exe was not found."
-            exit 1
-          }
-
-          Write-Host "Ahk2Exe found at:"
-          Write-Host $compiler.FullName
-
-          "AHK_COMPILER=$($compiler.FullName)" | Out-File `
-            -FilePath $env:GITHUB_ENV `
-            -Encoding utf8 `
-            -Append
+      - name: Install AutoHotkey v2 and Ahk2Exe
+        uses: holy-tao/install-autohotkey@v2
+        with:
+          version: '2.0.19'
+          compiler: 'latest'
 
       - name: Compile keyboard-fixer.ahk
         shell: powershell
         run: |
-          & "$env:AHK_COMPILER" `
-            /in "keyboard-fixer.ahk" `
-            /out "keyboard-fixer.exe"
+          & "${{ github.workspace }}\autohotkey\Compiler\Ahk2Exe.exe" `
+            /in "${{ github.workspace }}\keyboard-fixer.ahk" `
+            /out "${{ github.workspace }}\keyboard-fixer.exe"
 
           if ($LASTEXITCODE -ne 0) {
             Write-Error "AutoHotkey compilation failed."
